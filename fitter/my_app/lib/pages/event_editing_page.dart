@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:my_app/main.dart';
 import 'package:my_app/model/event.dart';
+import 'package:my_app/provider/event_provider.dart';
 import 'package:my_app/utils.dart';
 import 'package:provider/provider.dart';
+import 'package:flutter_masked_text2/flutter_masked_text2.dart';
 
 class EventEditingPage extends StatefulWidget{
   final Event? event;
@@ -18,7 +20,7 @@ class EventEditingPage extends StatefulWidget{
 }
 class _EventEditingPageState extends State<EventEditingPage>{
   final _formKey = GlobalKey<FormState>();
-  final titleController = TextEditingController();
+  final titleController = MoneyMaskedTextController(decimalSeparator:  '.', thousandSeparator: ',');
   late DateTime fromDate;
   late DateTime toDate;
   late int price;
@@ -55,53 +57,33 @@ class _EventEditingPageState extends State<EventEditingPage>{
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: <Widget>[
-              buildTitle(),
-              SizedBox(height:12),
               buildDateTimePickers(),
+              SizedBox(height:12),
+              buildTitle(),
             ],
           ),
         )
       ),
-      bottomNavigationBar: new Container(
-        padding: EdgeInsets.all(1.0),
-        child: Row(
-          mainAxisSize: MainAxisSize.max,
-          children: <Widget>[
-            Expanded(
-              flex: 1,
-              child: FlatButton.icon(
-                onPressed: () { 
-                },
-                icon: Icon(Icons.add),
-                label: Text("Add"),
-              ),
-            ),
-            Expanded(
-              flex: 1,
-              child: FlatButton.icon(
-                onPressed: () {}
-                  //MaterialPageRoute(builder: (context) => MainPage()),
-                ,
-                icon: Icon(Icons.calendar_today),
-                label: Text("Calender"),
-              ),
-            ),
-          ],
-        ),
-       ),
+      floatingActionButton: FloatingActionButton(
+        onPressed: saveForm,
+        tooltip: 'Add',
+        child: Icon(Icons.add),
+      ),
     );
   }
 
-  Widget buildTitle() => TextFormField(
-    style: TextStyle(fontSize: 24),
-    decoration: InputDecoration(
-      border: UnderlineInputBorder(),
-      hintText: 'Add Title',
+  Widget buildTitle() => buildHeader(
+    header: 'Price',
+    child: TextFormField(
+      style: TextStyle(fontSize: 24),
+      decoration: InputDecoration(
+        border: UnderlineInputBorder(),
+      ),
+      onFieldSubmitted: (_) => saveForm(),
+      validator: (title) => 
+        title !=null && title.isEmpty ? 'Price cannot be empty' : null,
+      controller: titleController,
     ),
-    onFieldSubmitted: (_) {},
-    validator: (title) => 
-      title !=null && title.isEmpty ? 'Title cannot be empty' : null,
-    controller: titleController,
   );
 
   Widget buildDateTimePickers() => Column(
@@ -111,8 +93,6 @@ class _EventEditingPageState extends State<EventEditingPage>{
       ],
   );
 
-
-
   Widget buildDate(String header, DateTime date) => buildHeader(
     header: header,
     child: Row(
@@ -121,21 +101,48 @@ class _EventEditingPageState extends State<EventEditingPage>{
           flex: 2,
           child: buildDropdownField(
             text: Utils.toDate(date),
-            onClicked: () => pickFromDateTime(pickDate: true),
+            onClicked: () => fromToIntersectionFunc(header, true),
           ),
         ),
         Expanded(
           child: buildDropdownField(
             text: Utils.toTime(date),
-            onClicked: () => pickFromDateTime(pickDate: false),
+            onClicked: () => fromToIntersectionFunc(header, false),
           ),
         ),
       ],
     )
   );
   
+  Future fromToIntersectionFunc(String header, bool pickDate){
+    if(header == 'FROM')
+      return pickFromDateTime(pickDate: pickDate);
+    
+    //So header == 'TO'
+      return pickToDateTime(pickDate:pickDate);
+  }
+
+  Future pickToDateTime({required bool pickDate}) async {
+    final date = await pickDateTime(
+      toDate, 
+      pickDate: pickDate, 
+      firstDate: pickDate ? fromDate : null,
+    );
+    if(date == null) return;
+
+    setState(() => toDate = date);
+  }
+
   Future pickFromDateTime({required bool pickDate}) async {
     final date = await pickDateTime(fromDate, pickDate: pickDate);
+    if(date == null) return;
+
+    if(date.isAfter(toDate)) {
+      toDate = 
+        DateTime(date.year, date.month, date.day, toDate.hour, toDate.minute);
+    }
+
+    setState(() => fromDate = date);
   }
 
   Future<DateTime?> pickDateTime(
@@ -160,6 +167,14 @@ class _EventEditingPageState extends State<EventEditingPage>{
         context: context,
         initialTime: TimeOfDay.fromDateTime(initialDate),
       );
+
+      if(timeOfday == null) return null;
+
+      final date =
+        DateTime(initialDate.year, initialDate.month, initialDate.day);
+      final time = Duration(hours: timeOfday.hour, minutes: timeOfday.minute);
+
+      return date.add(time);
     }
   }
  
@@ -184,4 +199,29 @@ class _EventEditingPageState extends State<EventEditingPage>{
         child,
       ],
     );
+
+  Future saveForm() async {
+    //Validating our form. invoke the validator in the buildTitle widget we made.
+    final isValid = _formKey.currentState!.validate();
+
+    if(isValid) {
+      //If the title is not empty 
+      //we validated the text field
+      
+      //--> Creating an event
+      final event = Event(
+        title: titleController.text,
+        description: 'Description',
+        from: fromDate,
+        to: toDate,
+      );
+
+      //--> Adding the event to the calendar
+      final provider = Provider.of<EventProvider>(context, listen: false);
+      provider.addEvent(event);
+
+      //Bring us back to Calender page.
+      Navigator.of(context).pop();
+    }
+  }
 }
